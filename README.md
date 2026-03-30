@@ -20,6 +20,11 @@
 - **DTO Pattern:** Data Transfer Objects to prevent data overposting.
 - **Swagger:** Interactive documentation for easy endpoint testing.
 
+### 🏗 Architecture & Design Patterns
+- **Layered Architecture:** Clear separation between Data Access, Business Logic, and API Layers.
+- **Repository Pattern:** Abstracting data access to promote testability and loose coupling.
+- **Service Layer:** Centralized business logic to keep Controllers thin and focused.
+- **Dependency Injection:** Leveraging .NET's native DI for better resource management.
 
 ## 🚀 Getting Started
 
