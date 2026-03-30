@@ -48,6 +48,4 @@ This command will automatically create the database and all tables (Users, Posts
 4.Run the Project
 
 
-1. **Clone the repo**
-   ```bash
    git clone [https://github.com/MazenSayed21/SocialMedia-WebAPI-DotNet.git](https://github.com/MazenSayed21/SocialMedia-WebAPI-DotNet.git)
