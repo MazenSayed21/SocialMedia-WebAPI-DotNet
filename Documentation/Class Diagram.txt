@@ -1,0 +1,339 @@
+classDiagram
+
+    %% Core Entities
+
+    class User {
+
+        +int id
+
+        +String name
+
+        +String password
+
+        +String email
+
+        +String bio
+
+        +String profile_photo_url
+
+    }
+
+
+
+    class Post {
+
+        +int id
+
+        +int creator_id
+
+        +String url_photo
+
+        +String caption
+
+        +String content
+
+    }
+
+
+
+    class Comment {
+
+        +int id
+
+        +int creator_id
+
+        +int post_id
+
+        +DateTime timestamp
+
+        +int parent_id
+
+    }
+
+
+
+    class Reaction {
+
+        +String react
+
+        +int creator_id
+
+        +int post_id
+
+    }
+
+
+
+    class Notification {
+
+        +int id
+
+        +int receiverId
+
+        +String message
+
+        +String type
+
+        +DateTime timestamp
+
+        +bool isRead
+
+    }
+
+   User "1" -- "*" Post : creates
+
+    User "1" -- "*" Comment : writes
+
+    User "1" -- "*" Reaction : reacts
+
+
+
+    Post "1" -- "*" Comment : contains
+
+    Post "1" -- "*" Reaction : receives
+
+
+
+    %% Interfaces
+
+    class IUserRepo {
+
+        <<interface>>
+
+        +getUserById(id) User
+
+        +save(user) bool
+
+        +update(user) bool
+
+        +delete(id) bool
+
+    }
+
+
+
+    class IPostRepo {
+
+        <<interface>>
+
+        +getPostById(id) Post
+
+        +getAllPosts() List
+
+        +create(post) bool
+
+        +update(post) bool
+
+        +delete(id) bool
+
+    }
+
+
+
+    class ICommentRepo {
+
+        <<interface>>
+
+        +getCommentsByPost(postId) List
+
+        +add(comment) bool
+
+        +delete(id) bool
+
+    }
+
+
+
+    class IReactionRepo {
+
+        <<interface>>
+
+        +addReaction(reaction) bool
+
+        +removeReaction(id) bool
+
+        +getReactionsByPost(postId) List
+
+    }
+
+   
+
+    class IFriendshipRepo {
+
+        <<interface>>
+
+        +save(friendship)
+
+        +updateStatus(id, status)
+
+        +exists(id1, id2) bool
+
+    }
+
+
+
+    class IPostService {
+
+        <<interface>>
+
+        +createPost(int userId, String content, String photoUrl, String caption) PostResult
+
+        +getHomeFeed(int userId) List~Post~
+
+        +updatePost(int userId, int postId, String newContent) Result
+
+        +deletePost(int userId, int postId) Result
+
+        +getPostDetails(int postId) Post
+
+    }
+
+
+
+    class INotificationService {
+
+        <<interface>>
+
+        +sendNotification(int receiverId, String message, String type) bool
+
+        +getNotificationsByUser(int userId) List~Notification~
+
+        +markAsRead(int notificationId) bool
+
+        +deleteNotification(int notificationId) bool
+
+    }
+
+
+
+    class IFriendshipService {
+
+        <<interface>>
+
+        +sendRequest(int senderId, int receiverId)
+
+        +acceptRequest(int requestId)
+
+    }
+
+    class ICommentService {
+        <<interface>>
+     
+        +addComment(int userId, int postId, String content, int? parentId) CommentResult
+     
+        +getCommentsByPost(int postId) List~Comment~
+        
+        +deleteComment(int userId, int commentId) Result
+        
+        +getReplies(int commentId) List~Comment~
+    }
+
+    class IReactionService {
+        <<interface>>
+        +toggleReaction(int userId, int postId, String reactionType) Result
+        +getReactionsByPost(int postId) List~Reaction~
+        +getReactionCount(int postId) Map~String, Integer~
+        +hasUserReacted(int userId, int postId) bool
+    }
+
+
+
+
+
+    %% Concrete Implementations
+
+    class SqlUserRepo {
+
+        -DBContext _context
+
+        }
+
+    class SqlPostRepo {
+
+        -DBContext _context
+
+        }
+
+    class SqlCommentRepo {
+
+        -DBContext _context
+
+        }
+
+    class SqlReactionRepo {
+
+        -DBContext _context
+    }
+
+    class FriendshipService {
+    }
+
+    class PostService {
+    }
+
+    class NotificationService {
+    }
+
+    class CommentService {        
+    }
+
+    class ReactionService {     
+     }
+
+   
+
+    %% Relationships (The "Who does What")
+
+
+    IFriendshipService <|.. FriendshipService : implements
+
+    FriendshipService --> IFriendshipRepo : uses/depends on
+
+    FriendshipService --> IUserRepo : validates users
+
+
+
+    IPostService <|.. PostService : implements
+
+    PostService --> IPostRepo : Dependency Injection
+
+    PostService --> IUserRepo : Dependency Injection
+
+
+    IUserRepo <|.. SqlUserRepo : implements
+
+    IPostRepo <|.. SqlPostRepo : implements
+
+    ICommentRepo <|.. SqlCommentRepo : implements
+
+    IReactionRepo <|.. SqlReactionRepo : implements
+
+
+
+    NotificationService --> IUserRepo : uses
+
+    INotificationService <|.. NotificationService : implements
+
+    NotificationService --> INotificationRepo : uses
+
+    NotificationService --> Notification : manages
+
+
+    ICommentService <|.. CommentService : implements
+  
+    CommentService --> ICommentRepo : uses
+
+    CommentService --> IPostRepo : validates post existence
+
+    CommentService --> INotificationService : notifies post owner
+
+
+    IReactionService <|.. ReactionService : implements
+
+    ReactionService --> IReactionRepo : uses
+
+    ReactionService --> IPostRepo : checks post existence
+
+    ReactionService --> INotificationService : alerts post owner
+
+    

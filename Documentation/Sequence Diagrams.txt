@@ -1,0 +1,425 @@
+Create Post
+sequenceDiagram
+    autonumber
+    actor User
+    participant UI as Mobile/Web UI
+    participant PC as PostController
+    participant PS as PostService
+    participant MS as MediaService
+    participant PR as PostRepo
+
+    User->>UI: Taps 'Create New Post'
+    UI->>User: Displays Editor Interface
+    
+    User->>UI: Inputs content & selects Media
+    
+    %% Media Handling
+    UI->>MS: uploadMedia(file)
+    MS-->>UI: returns mediaUrl
+    
+    User->>UI: Taps 'Post/Share' button
+    
+    %% The Request Entry
+    UI->>PC: POST /api/posts (userId, content, mediaUrl, settings)
+    
+    Note over PC, PS: Controller validates Request Format (ModelState)
+    
+    PC->>PS: createPost(userId, content, mediaUrl, settings)
+    
+    %% Business Logic Layer
+    alt Validation Logic
+        PS->>PS: validateContent(content)
+        Note right of PS: Checks for prohibited words or empty strings
+    end
+
+    alt Success Path
+        PS->>PR: save(postObject)
+        PR-->>PS: return true
+        PS-->>PC: return SuccessResult(PostDto)
+        PC-->>UI: 201 Created (JSON)
+        UI-->>User: Show "Post Published" & Refresh Feed
+    else Validation Error
+        PS-->>PC: throw ValidationException
+        PC-->>UI: 400 Bad Request (Error Message)
+        UI-->>User: Display Error: "Content cannot be empty"
+    end
+
+
+Comment on a post
+sequenceDiagram
+    autonumber
+    actor User
+    participant UI as Post/Feed UI
+    participant CC as CommentController
+    participant CS as CommentService
+    participant PR as PostRepo
+    participant CR as CommentRepo
+    participant NS as NotificationService
+
+    User->>UI: Types comment & taps 'Send'
+    
+    UI->>CC: POST /api/comments (userId, postId, content)
+    
+    CC->>CS: addComment(userId, postId, content)
+    
+    %% Business Logic & Validation
+    Note over CS: Validate content length
+    CS->>PR: getPostById(postId)
+    
+    alt Post Not Found
+        PR-->>CS: return null
+        CS-->>CC: return NotFoundError
+        CC-->>UI: 404 Not Found
+        UI-->>User: Show "Post no longer exists"
+    else Post Exists
+        PR-->>CS: return Post Object
+        
+        CS->>CR: add(Comment object)
+        CR-->>CS: return true / commentId
+        
+        %% Side Effects
+        CS->>NS: sendNotification(postOwnerId, "New comment on your post", "Comment")
+        
+        CS-->>CC: return Success(CommentDto)
+        CC-->>UI: 201 Created
+        UI-->>User: Display comment in list
+    end
+
+
+
+
+
+Reply to a comment
+sequenceDiagram
+    autonumber
+    actor User
+    participant UI as Comment Section UI
+    participant CC as CommentController
+    participant CS as CommentService
+    participant CR as CommentRepo
+    participant NS as NotificationService
+
+    User->>UI: Types reply & taps 'Send'
+    
+    UI->>CC: POST /api/comments (userId, postId, content, parentId)
+    
+    CC->>CS: addComment(userId, postId, content, parentId)
+    
+    %% Logic for Replies
+    CS->>CR: getCommentById(parentId)
+    
+    alt Parent Comment Not Found
+        CR-->>CS: return null
+        CS-->>CC: return Error("Original comment deleted")
+        CC-->>UI: 400 Bad Request
+        UI-->>User: Show "Cannot reply to deleted comment"
+    else Parent Exists
+        CR-->>CS: return ParentComment Object
+        
+        CS->>CR: add(Reply object with parentId)
+        CR-->>CS: return true / replyId
+        
+        %% Double Notification logic
+        par Notify Post Owner
+            CS->>NS: sendNotification(postOwnerId, "New activity on your post", "Activity")
+        and Notify Original Commenter
+            CS->>NS: sendNotification(parentCommenterId, "User replied to your comment", "Reply")
+        end
+        
+        CS-->>CC: return Success(CommentDto)
+        CC-->>UI: 201 Created
+        UI-->>User: Display reply nested under parent
+    end
+
+
+
+
+
+React on post
+sequenceDiagram
+    autonumber
+    actor User
+    participant UI as Post UI
+    participant RC as ReactionController
+    participant RS as ReactionService
+    participant RR as ReactionRepo
+    participant PR as PostRepo
+    participant NS as NotificationService
+
+    User->>UI: Taps 'Like' (or other emoji)
+    
+    UI->>RC: POST /api/reactions (userId, postId, reactionType)
+    
+    RC->>RS: toggleReaction(userId, postId, reactionType)
+    
+    RS->>PR: getPostById(postId)
+    alt Post does not exist
+        PR-->>RS: return null
+        RS-->>RC: return NotFound
+        RC-->>UI: 404 Not Found
+    else Post exists
+        PR-->>RS: return Post Object
+        
+        RS->>RR: getUserReaction(userId, postId)
+        
+        alt No existing reaction
+            RS->>RR: addReaction(userId, postId, reactionType)
+            RS->>NS: sendNotification(postOwnerId, "User liked your post", "Reaction")
+            RS-->>RC: return Status(Added)
+        else Same reaction type exists
+            RS->>RR: removeReaction(userId, postId)
+            RS-->>RC: return Status(Removed)
+        else Different reaction type exists
+            RS->>RR: updateReaction(userId, postId, newType)
+            RS-->>RC: return Status(Updated)
+        end
+        
+        RC-->>UI: 200 OK (New State/Count)
+        UI-->>User: Update icon color/animation
+    end
+
+
+
+Edit post
+
+sequenceDiagram
+    autonumber
+    actor User
+    participant UI as Edit Interface
+    participant PC as PostController
+    participant PS as PostService
+    participant PR as PostRepo
+
+    User->>UI: Modifies text and taps 'Update'
+    
+    UI->>PC: PUT /api/posts/{postId} (userId, newContent)
+    
+    PC->>PS: updatePost(userId, postId, newContent)
+    
+    %% Security & Validation Check
+    PS->>PR: getPostById(postId)
+    
+    alt Post Not Found
+        PR-->>PS: return null
+        PS-->>PC: return NotFoundError
+        PC-->>UI: 404 Not Found
+    else Post Found
+        PR-->>PS: return PostObject
+        
+        %% Authorization check
+        alt userId != Post.creator_id
+            PS-->>PC: return UnauthorizedError
+            PC-->>UI: 403 Forbidden
+            UI-->>User: Show "You can only edit your own posts"
+        else Authorized
+            Note over PS: Validate newContent (prohibited words, etc.)
+            
+            PS->>PR: update(postId, newContent)
+            PR-->>PS: return true
+            
+            PS-->>PC: return Success(UpdatedPostDto)
+            PC-->>UI: 200 OK
+            UI-->>User: Display updated post content
+        end
+    end
+
+
+
+
+Delete post
+sequenceDiagram
+    autonumber
+    actor User
+    participant UI as Post/Profile UI
+    participant PC as PostController
+    participant PS as PostService
+    participant PR as PostRepo
+
+    User->>UI: Taps 'Delete Post' & confirms
+    
+    UI->>PC: DELETE /api/posts/{postId} (userId)
+    
+    PC->>PS: deletePost(userId, postId)
+    
+    %% 1. Fetch post to check ownership
+    PS->>PR: getPostById(postId)
+    
+    alt Post Not Found
+        PR-->>PS: return null
+        PS-->>PC: return NotFound
+        PC-->>UI: 404 Not Found
+    else Post Found
+        PR-->>PS: return PostObject
+        
+        %% 2. Authorization Check
+        alt userId != Post.creator_id
+            PS-->>PC: return Unauthorized
+            PC-->>UI: 403 Forbidden
+            UI-->>User: Show "Action Not Permitted"
+        else Authorized
+            %% 3. Execute Delete
+            PS->>PR: delete(postId)
+            PR-->>PS: return true
+            
+            PS-->>PC: return Success
+            PC-->>UI: 200 OK / 204 No Content
+            UI-->>User: Remove post from UI view
+        end
+    end
+
+
+
+Edit Comment
+sequenceDiagram
+    autonumber
+    actor User
+    participant UI as Comment UI
+    participant CC as CommentController
+    participant CS as CommentService
+    participant CR as CommentRepo
+
+    User->>UI: Modifies comment text & taps 'Save'
+    
+    UI->>CC: PUT /api/comments/{commentId} (userId, newContent)
+    
+    CC->>CS: updateComment(userId, commentId, newContent)
+    
+    %% 1. Check if comment exists and verify ownership
+    CS->>CR: getCommentById(commentId)
+    
+    alt Comment Not Found
+        CR-->>CS: return null
+        CS-->>CC: return NotFound
+        CC-->>UI: 404 Not Found
+    else Comment Found
+        CR-->>CS: return CommentObject
+        
+        %% 2. Authorization Check
+        alt userId != Comment.creator_id
+            CS-->>CC: return Unauthorized
+            CC-->>UI: 403 Forbidden
+            UI-->>User: Show "You can only edit your own comments"
+        else Authorized
+            %% 3. Content Validation
+            Note over CS: Validate newContent (length, filters)
+            
+            CS->>CR: update(commentId, newContent)
+            CR-->>CS: return true
+            
+            CS-->>CC: return Success(UpdatedCommentDto)
+            CC-->>UI: 200 OK
+            UI-->>User: Update comment text in list (Show 'Edited' label)
+        end
+    end
+
+
+Delete Comment
+sequenceDiagram
+    autonumber
+    actor User
+    participant CC as CommentController
+    participant CS as CommentService
+    participant CR as CommentRepo
+    participant PR as PostRepo
+
+    User->>CC: DELETE /api/comments/{commentId} (userId)
+    CC->>CS: deleteComment(userId, commentId)
+    
+    %% 1. Get Comment and the associated Post
+    CS->>CR: getCommentById(commentId)
+    CR-->>CS: return CommentObject (contains postId, creator_id)
+    
+    CS->>PR: getPostById(comment.postId)
+    PR-->>CS: return PostObject (contains creator_id)
+    
+    %% 2. Enhanced Authorization Check
+    alt userId == Comment.creator_id OR userId == Post.creator_id
+        
+        %% 3. Handle Children (Recursive/Cascade)
+        Note over CS, CR: Logic: Delete all replies where parentId = commentId
+        CS->>CR: deleteByParentId(commentId)
+        CR-->>CS: return success
+        
+        %% 4. Delete the Comment itself
+        CS->>CR: delete(commentId)
+        CR-->>CS: return success
+        
+        CS-->>CC: return Success
+        CC-->>User: 200 OK (Comment and replies removed)
+        
+    else Unauthorized
+        CS-->>CC: return Unauthorized
+        CC-->>User: 403 Forbidden
+    end
+
+
+
+Send friend Reuest
+sequenceDiagram
+    autonumber
+    actor UserA as Sender
+    participant FC as FriendshipController
+    participant FS as FriendshipService
+    participant FR as FriendshipRepo
+    participant NS as NotificationService
+
+    UserA->>FC: POST /api/friends/request (receiverId)
+    FC->>FS: sendRequest(senderId, receiverId)
+    
+    %% 1. Check for existing relationship
+    FS->>FR: exists(senderId, receiverId)
+    FR-->>FS: return bool (false)
+
+    alt Already exists
+        FS-->>FC: return Conflict/Error
+        FC-->>UserA: 409 Conflict ("Request already sent")
+    else No existing request
+        %% 2. Save as 'Pending'
+        FS->>FR: save(senderId, receiverId, status='Pending')
+        FR-->>FS: return success
+        
+        %% 3. Notify Receiver
+        FS->>NS: sendNotification(receiverId, "UserA sent you a friend request", "FriendRequest")
+        
+        FS-->>FC: return Success
+        FC-->>UserA: 201 Created ("Request Sent")
+    end
+
+Accept / reject reuest
+sequenceDiagram
+    autonumber
+    actor UserB as Receiver
+    participant FC as FriendshipController
+    participant FS as FriendshipService
+    participant FR as FriendshipRepo
+    participant NS as NotificationService
+
+    UserB->>FC: POST /api/friends/respond (requestId, action["Accept"|"Reject"])
+    FC->>FS: respondToRequest(userId, requestId, action)
+    
+    FS->>FR: getRequestById(requestId)
+    FR-->>FS: return requestObj
+    
+    alt Request not found OR request.receiverId != userId
+        FS-->>FC: return Error("Unauthorized")
+        FC-->>UserB: 403 Forbidden
+    else Valid Request
+        
+        alt action == "Accept"
+            FS->>FR: updateStatus(requestId, "Accepted")
+            FS->>NS: sendNotification(requestObj.senderId, "UserB accepted your friend request", "FriendAccepted")
+            FS-->>FC: return Success("Now Friends")
+            
+        else action == "Reject"
+            %% Option A: Soft delete / Status change
+            FS->>FR: updateStatus(requestId, "Rejected")
+            %% Note: Usually, we don't notify the sender of a rejection to avoid negativity
+            FS-->>FC: return Success("Request Rejected")
+            
+        else action == "Block"
+             FS->>FR: updateStatus(requestId, "Blocked")
+             FS-->>FC: return Success("User Blocked")
+        end
+        
+        FC-->>UserB: 200 OK
+    end
